@@ -11,6 +11,7 @@ import (
 	polo "OLO-backend/olo_service/generated"
 	"context"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log/slog"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -55,14 +56,19 @@ func (app *App) Start() {
 		slog.Int("http_port", app.config.HTTP.Port),
 	)
 
-	mux := runtime.NewServeMux()
+	gatewayMux := runtime.NewServeMux()
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/", gatewayMux)
+
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 
 	app.initService(entity.Socket{
 		Host: app.config.AuthService.Host,
 		Port: app.config.AuthService.Port,
 	}, func(formattedAddr string) {
-		err := pauth.RegisterAuthHandlerFromEndpoint(ctx, mux, formattedAddr, opts)
+		err := pauth.RegisterAuthHandlerFromEndpoint(ctx, gatewayMux, formattedAddr, opts)
 		if err != nil {
 			logger.Error("can`t register service: %v", err)
 		}
@@ -72,7 +78,7 @@ func (app *App) Start() {
 		Host: app.config.OloService.Host,
 		Port: app.config.OloService.Port,
 	}, func(formattedAddr string) {
-		err := polo.RegisterOLOHandlerFromEndpoint(ctx, mux, formattedAddr, opts)
+		err := polo.RegisterOLOHandlerFromEndpoint(ctx, gatewayMux, formattedAddr, opts)
 		if err != nil {
 			logger.Error("Failed to register service: %v", err)
 		}
@@ -84,7 +90,6 @@ func (app *App) Start() {
 	}).Handler(mux)
 
 	httpAddr := app.config.HTTP.ToStr()
-
 	logger.Info("API Gateway is listening", slog.String("addr", httpAddr))
 	if err := http.ListenAndServe(httpAddr, withCors); err != nil {
 		logger.Error("failed to serve: %v", err)

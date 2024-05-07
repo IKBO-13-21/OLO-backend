@@ -9,6 +9,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.1
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/jmoiron/sqlx v1.3.5
+	github.com/prometheus/client_golang v1.19.0
 	github.com/rs/cors v1.10.1
 	golang.org/x/crypto v0.22.0
 	golang.org/x/exp v0.0.0-20240318143956-a85f2c67cd81
@@ -17,11 +18,12 @@ require (
 )
 
 require (
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/yuin/goldmark v1.4.13 // indirect
-	golang.org/x/mod v0.17.0 // indirect
-	golang.org/x/tools v0.20.0 // indirect
-	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.3.0 // indirect
+	github.com/prometheus/client_model v0.5.0 // indirect
+	github.com/prometheus/common v0.48.0 // indirect
+	github.com/prometheus/procfs v0.12.0 // indirect
 )
 
 require (
