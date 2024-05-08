@@ -11,6 +11,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/prometheus/client_golang v1.19.0
 	github.com/rs/cors v1.10.1
+	github.com/urfave/negroni v1.0.0
 	golang.org/x/crypto v0.22.0
 	golang.org/x/exp v0.0.0-20240318143956-a85f2c67cd81
 	google.golang.org/genproto/googleapis/api v0.0.0-20240415180920-8c6c420018be

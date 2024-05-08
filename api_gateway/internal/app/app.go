@@ -11,8 +11,13 @@ import (
 	polo "OLO-backend/olo_service/generated"
 	"context"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/urfave/negroni"
 	"log/slog"
+	"strconv"
+	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/rs/cors"
@@ -24,6 +29,18 @@ import (
 type App struct {
 	config *config.Config // It holds various configuration parameters required by the application.
 	log    *slog.Logger   // It provides logging capabilities for the application.
+}
+
+// метрика для отслеживания затраченного времени и сделанных запросов
+var requestMetrics = promauto.NewSummaryVec(prometheus.SummaryOpts{
+	Namespace:  "ads",
+	Subsystem:  "http",
+	Name:       "request",
+	Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+}, []string{"status"})
+
+func observeRequest(d time.Duration, status int) {
+	requestMetrics.WithLabelValues(strconv.Itoa(status)).Observe(d.Seconds())
 }
 
 // New is the entry point for the API Gateway application.
@@ -40,6 +57,20 @@ func New(log *slog.Logger) (app *App, err error) {
 // It executes a callback function with the formatted address of the service.
 func (app *App) initService(s entity.Socket, fn func(formattedAddr string)) {
 	fn(fmt.Sprintf("%s:%d", s.Host, s.Port))
+}
+
+func wrapHandlerForStatPrometheus(wrappedHandler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		//log.Printf("--> %s %s", req.Method, req.URL.Path)
+		lrw := negroni.NewResponseWriter(w)
+		start := time.Now()
+		defer func() {
+			statusCode := lrw.Status()
+			observeRequest(time.Since(start), statusCode)
+			//log.Printf("<-- %d %s", statusCode, http.StatusText(statusCode))
+		}()
+		wrappedHandler.ServeHTTP(lrw, req)
+	})
 }
 
 // The Start function initializes and starts the API gateway service.
@@ -60,7 +91,7 @@ func (app *App) Start() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
-	mux.Handle("/", gatewayMux)
+	mux.Handle("/", wrapHandlerForStatPrometheus(gatewayMux))
 
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 
@@ -80,7 +111,7 @@ func (app *App) Start() {
 	}, func(formattedAddr string) {
 		err := polo.RegisterOLOHandlerFromEndpoint(ctx, gatewayMux, formattedAddr, opts)
 		if err != nil {
-			logger.Error("Failed to register service: %v", err)
+			logger.Error("can`t to register service: %v", err)
 		}
 	})
 
