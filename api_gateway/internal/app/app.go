@@ -31,17 +31,39 @@ type App struct {
 	log    *slog.Logger   // It provides logging capabilities for the application.
 }
 
-// метрика для отслеживания затраченного времени и сделанных запросов
-var requestMetrics = promauto.NewSummaryVec(prometheus.SummaryOpts{
-	Namespace:  "ads",
-	Subsystem:  "http",
-	Name:       "request",
-	Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
-}, []string{"status"})
+var (
+	// метрика для отслеживания затраченного времени и сделанных запросов
+	requestMetrics = promauto.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Namespace:  "ads",
+			Subsystem:  "http",
+			Name:       "request",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+		},
+		[]string{"status"},
+	)
 
-func observeRequest(d time.Duration, status int) {
-	requestMetrics.WithLabelValues(strconv.Itoa(status)).Observe(d.Seconds())
-}
+	requestCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "ads",
+			Subsystem: "http",
+			Name:      "client_request_count",
+			Help:      "Total number of requests from client",
+		},
+		[]string{"client", "server", "method", "route", "status"},
+	)
+
+	durationHistorgram = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "ads",
+			Subsystem: "http",
+			Name:      "client_request_duration_secs",
+			Help:      "Duration of requests from Client",
+			Buckets:   []float64{0.1, 0.5, 1, 2, 5},
+		},
+		[]string{"client", "server", "method", "route", "status"},
+	)
+)
 
 // New is the entry point for the API Gateway application.
 // It initializes the application
@@ -66,7 +88,24 @@ func wrapHandlerForStatPrometheus(wrappedHandler http.Handler) http.Handler {
 		start := time.Now()
 		defer func() {
 			statusCode := lrw.Status()
-			observeRequest(time.Since(start), statusCode)
+
+			labels := prometheus.Labels{
+				"client": req.RemoteAddr,           // defines the client server
+				"server": req.Host,                 // defines the outbound request server
+				"method": req.Method,               // HTTP method
+				"route":  req.URL.Path,             // Request route
+				"status": strconv.Itoa(statusCode), // Response status
+			}
+			duration := time.Since(start).Seconds()
+
+			requestMetrics.WithLabelValues(strconv.Itoa(statusCode)).Observe(duration)
+
+			// the duration
+			durationHistorgram.With(labels).Observe(duration)
+
+			// request api count
+			requestCounter.With(labels).Inc()
+
 			//log.Printf("<-- %d %s", statusCode, http.StatusText(statusCode))
 		}()
 		wrappedHandler.ServeHTTP(lrw, req)
@@ -81,6 +120,9 @@ func (app *App) Start() {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	prometheus.MustRegister(requestCounter)
+	prometheus.MustRegister(durationHistorgram)
 
 	logger := app.log.With(
 		slog.String("op", op),
